@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PNG Cursor Tool</title>
+<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+<style>
+body {
+    font-family: 'Comic Neue', cursive;
+    background:#f5f5f5;
+    color:#333;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:20px;
+}
+.container {
+    background:#fff;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.1);
+    max-width: 400px;
+    width:100%;
+}
+h2 { margin-bottom:20px; }
+.preview-container {
+    display:flex;
+    justify-content:center;
+    margin:15px 0;
+}
+#preview {
+    width: 64px;
+    height: 64px;
+    border:1px dashed #aaa;
+    background-size: contain;
+    background-repeat:no-repeat;
+    background-position:center;
+}
+input, button, select, label {
+    margin:5px;
+}
+.slider-container {
+    display:flex;
+    flex-direction: column;
+    margin:10px 0;
+}
+.slider-container label {
+    margin-bottom:2px;
+}
+button {
+    background:#656b6c;
+    color:#fff;
+    border:none;
+    padding:8px 16px;
+    border-radius:12px;
+    cursor:pointer;
+}
+button:hover { background:#656b6c; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>PNG Cursor Tool</h2>
+
+<input type="file" id="upload" accept="image/png"><br>
+
+<label for="size">Cursor Size:</label>
+<select id="size">
+  <option value="32">32px</option>
+  <option value="64" selected>64px</option>
+  <option value="96">96px</option>
+  <option value="128">128px</option>
+</select><br>
+
+<div class="slider-container">
+    <label for="brightness">Brightness</label>
+    <input type="range" id="brightness" min="0" max="200" value="100">
+</div>
+
+<div class="slider-container">
+    <label for="contrast">Contrast</label>
+    <input type="range" id="contrast" min="0" max="200" value="100">
+</div>
+
+<div class="slider-container">
+    <label for="threshold">Black & White Threshold</label>
+    <input type="range" id="threshold" min="0" max="255" value="128">
+</div>
+
+<div class="slider-container">
+    <label for="whiteTolerance">White Background Tolerance</label>
+    <input type="range" id="whiteTolerance" min="0" max="100" value="30">
+</div>
+
+<label for="hotspotX">Hotspot X:</label>
+<input type="number" id="hotspotX" value="32" min="0" max="128">
+<label for="hotspotY">Hotspot Y:</label>
+<input type="number" id="hotspotY" value="32" min="0" max="128"><br>
+
+<button id="apply">Apply Cursor</button>
+<button id="restore">Restore Default Cursor</button>
+<button id="download">Download PNG Cursor</button>
+
+<div class="preview-container">
+    <div id="preview"></div>
+</div>
+</div>
+
+<script>
+let uploadedImage = null;
+let pngDataUrl = null;
+const preview = document.getElementById('preview');
+
+// 判断接近白色
+function isNearWhite(r, g, b, tolerance){
+    return r > 255 - tolerance && g > 255 - tolerance && b > 255 - tolerance;
+}
+
+// 处理像素：去白背景 + 黑白化 + 亮度/对比度
+function applyFiltersToPixel(r,g,b,a, brightness, contrast, threshold, whiteTolerance){
+    r = r * brightness / 100;
+    g = g * brightness / 100;
+    b = b * brightness / 100;
+    r = ((r - 128) * contrast / 100) + 128;
+    g = ((g - 128) * contrast / 100) + 128;
+    b = ((b - 128) * contrast / 100) + 128;
+    if(isNearWhite(r,g,b, whiteTolerance)){
+        a=0;
+        return [r,g,b,a];
+    }
+    let gray = 0.3*r + 0.59*g + 0.11*b;
+    gray = gray > threshold ? 255 : 0;
+    return [gray, gray, gray, a];
+}
+
+function processImage(){
+    if(!uploadedImage) return;
+    const size = parseInt(document.getElementById('size').value);
+    const brightness = parseInt(document.getElementById('brightness').value);
+    const contrast = parseInt(document.getElementById('contrast').value);
+    const threshold = parseInt(document.getElementById('threshold').value);
+    const whiteTolerance = parseInt(document.getElementById('whiteTolerance').value);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(uploadedImage,0,0,size,size);
+
+    const imageData = ctx.getImageData(0,0,size,size);
+    const data = imageData.data;
+    for(let i=0;i<data.length;i+=4){
+        const [r,g,b,a] = applyFiltersToPixel(data[i], data[i+1], data[i+2], data[i+3], brightness, contrast, threshold, whiteTolerance);
+        data[i]=r; data[i+1]=g; data[i+2]=b; data[i+3]=a;
+    }
+    ctx.putImageData(imageData,0,0);
+    pngDataUrl = canvas.toDataURL('image/png');
+    preview.style.width = size+'px';
+    preview.style.height = size+'px';
+    preview.style.backgroundImage = `url(${pngDataUrl})`;
+}
+
+document.getElementById('upload').addEventListener('change',function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt){
+        const img = new Image();
+        img.onload = function(){
+            uploadedImage = img;
+            processImage();
+        };
+        img.src = evt.target.result;
+    };
+    reader.readAsDataURL(file);
+});
+
+['size','brightness','contrast','threshold','whiteTolerance'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', processImage);
+});
+
+document.getElementById('apply').addEventListener('click', function(){
+    if(!pngDataUrl){ alert('Please upload an image first'); return; }
+    const x = parseInt(document.getElementById('hotspotX').value);
+    const y = parseInt(document.getElementById('hotspotY').value);
+    document.body.style.cursor = `url(${pngDataUrl}) ${x} ${y}, auto`;
+});
+
+document.getElementById('restore').addEventListener('click', function(){
+    document.body.style.cursor = 'auto';
+});
+
+document.getElementById('download').addEventListener('click',function(){
+    if(!pngDataUrl){ alert('Please generate the cursor first'); return; }
+    const a = document.createElement('a');
+    a.href = pngDataUrl;
+    a.download = 'cursor.png';
+    a.click();
+});
+</script>
+</body>
+</html>
